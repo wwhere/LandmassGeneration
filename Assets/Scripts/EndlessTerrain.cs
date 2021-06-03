@@ -4,7 +4,6 @@ using UnityEngine;
 
 public class EndlessTerrain : MonoBehaviour
 {
-    const float scale = 1f;
 
     const float viewerMoveThresholdForChunkUpdate = 25f;
     const float sqrViewerMoveThresholdForChunkUpdate = viewerMoveThresholdForChunkUpdate * viewerMoveThresholdForChunkUpdate;
@@ -36,9 +35,9 @@ public class EndlessTerrain : MonoBehaviour
 
     private void Update()
     {
-        viewerPosition = (new Vector2(viewer.position.x, viewer.position.z)) / scale;
+        viewerPosition = (new Vector2(viewer.position.x, viewer.position.z)) / mapGenerator.terrainData.uniformScale;
 
-        if ((viewerPositionOld-viewerPosition).sqrMagnitude > sqrViewerMoveThresholdForChunkUpdate)
+        if ((viewerPositionOld - viewerPosition).sqrMagnitude > sqrViewerMoveThresholdForChunkUpdate)
         {
             viewerPositionOld = viewerPosition;
             UpdateVisibleChunks();
@@ -103,15 +102,15 @@ public class EndlessTerrain : MonoBehaviour
             meshRenderer.material = material;
             meshFilter = meshObject.AddComponent<MeshFilter>();
             meshCollider = meshObject.AddComponent<MeshCollider>();
-            meshObject.transform.position = positionV3 * scale;
+            meshObject.transform.position = positionV3 * mapGenerator.terrainData.uniformScale;
             meshObject.transform.parent = parent;
-            meshObject.transform.localScale = Vector3.one * scale;
+            meshObject.transform.localScale = Vector3.one * mapGenerator.terrainData.uniformScale;
 
 
             SetVisible(false);
 
             lodMeshes = new LODMesh[detailLevels.Length];
-            for (int i = 0; i < detailLevels.Length;i++)
+            for (int i = 0; i < detailLevels.Length; i++)
             {
                 lodMeshes[i] = new LODMesh(detailLevels[i].lod, UpdateTerrainChunk);
                 if (detailLevels[i].useForCollider)
@@ -127,9 +126,6 @@ public class EndlessTerrain : MonoBehaviour
         {
             mapData = _mapData;
             mapDataReceived = true;
-
-            Texture2D texture = TextureGenerator.TextureFromColourMap(mapData.colourMap, mapGenerator.mapChunkSize, mapGenerator.mapChunkSize);
-            meshRenderer.material.mainTexture = texture;
 
             UpdateTerrainChunk();
         }
@@ -183,7 +179,7 @@ public class EndlessTerrain : MonoBehaviour
                         }
                     }
 
-                    terrainChunksVisibleLastUpdate.Add(this);                    
+                    terrainChunksVisibleLastUpdate.Add(this);
                 }
 
                 SetVisible(visible);
