@@ -7,7 +7,9 @@ public class EndlessTerrain : MonoBehaviour
 
     const float viewerMoveThresholdForChunkUpdate = 25f;
     const float sqrViewerMoveThresholdForChunkUpdate = viewerMoveThresholdForChunkUpdate * viewerMoveThresholdForChunkUpdate;
+    const float colliderGenerationDistanceThreshold = 5f;
 
+    public int colliderLODIndex;
     public LODInfo[] detailLevels;
     public static float maxViewDistance;
 
@@ -22,7 +24,7 @@ public class EndlessTerrain : MonoBehaviour
     int chunksVisibleInViewDistance;
 
     Dictionary<Vector2, TerrainChunk> terrainChunkDictionary = new Dictionary<Vector2, TerrainChunk>();
-    static List<TerrainChunk> terrainChunksVisibleLastUpdate = new List<TerrainChunk>();
+    static List<TerrainChunk> visibleTerrainChunks = new List<TerrainChunk>();
 
     private void Start()
     {
@@ -37,6 +39,14 @@ public class EndlessTerrain : MonoBehaviour
     {
         viewerPosition = (new Vector2(viewer.position.x, viewer.position.z)) / mapGenerator.terrainData.uniformScale;
 
+        if (viewerPosition != viewerPositionOld)
+        {
+            foreach (var chunk in visibleTerrainChunks)
+            {
+                chunk.UpdateCollisionMesh();
+            }
+        }
+
         if ((viewerPositionOld - viewerPosition).sqrMagnitude > sqrViewerMoveThresholdForChunkUpdate)
         {
             viewerPositionOld = viewerPosition;
@@ -46,11 +56,13 @@ public class EndlessTerrain : MonoBehaviour
 
     void UpdateVisibleChunks()
     {
-        foreach (var chunk in terrainChunksVisibleLastUpdate)
+        HashSet<Vector2> alreadyUpdatedChunks = new HashSet<Vector2>();
+
+        for (int i = visibleTerrainChunks.Count-1; i >= 0; i--)
         {
-            chunk.SetVisible(false);
+            alreadyUpdatedChunks.Add(visibleTerrainChunks[i].coord);
+            visibleTerrainChunks[i].UpdateTerrainChunk();
         }
-        terrainChunksVisibleLastUpdate.Clear();
 
         int currentChunkCoordX = Mathf.RoundToInt(viewerPosition.x / chunkSize);
         int currentChunkCoordY = Mathf.RoundToInt(viewerPosition.y / chunkSize);
@@ -63,11 +75,15 @@ public class EndlessTerrain : MonoBehaviour
 
                 if (terrainChunkDictionary.ContainsKey(viewedChunkCoord))
                 {
-                    terrainChunkDictionary[viewedChunkCoord].UpdateTerrainChunk();
+                    if (!alreadyUpdatedChunks.Contains(terrainChunkDictionary[viewedChunkCoord].coord))
+                    {
+                        terrainChunkDictionary[viewedChunkCoord].UpdateTerrainChunk();
+                    }
                 }
                 else
                 {
-                    terrainChunkDictionary.Add(viewedChunkCoord, new TerrainChunk(viewedChunkCoord, chunkSize, detailLevels, transform, mapMaterial));
+                    print($"New chunk for {viewedChunkCoord}");
+                    terrainChunkDictionary.Add(viewedChunkCoord, new TerrainChunk(viewedChunkCoord, chunkSize, detailLevels, colliderLODIndex, transform, mapMaterial));
                 }
             }
         }
@@ -75,6 +91,7 @@ public class EndlessTerrain : MonoBehaviour
 
     public class TerrainChunk
     {
+        public Vector2 coord;
         GameObject meshObject;
         Vector2 position;
         Bounds bounds;
@@ -85,14 +102,18 @@ public class EndlessTerrain : MonoBehaviour
 
         LODInfo[] detailLevels;
         LODMesh[] lodMeshes;
-        LODMesh collisionLODMesh;
+        int colliderLODIndex;
+        bool hasSetCollider;
+
         MapData mapData;
         bool mapDataReceived;
         int previousLodIndex = -1;
 
-        public TerrainChunk(Vector2 coord, int size, LODInfo[] levelsOfDetail, Transform parent, Material material)
+        public TerrainChunk(Vector2 coord, int size, LODInfo[] levelsOfDetail, int _colliderLODIndex, Transform parent, Material material)
         {
+            this.coord = coord;
             detailLevels = levelsOfDetail;
+            colliderLODIndex = _colliderLODIndex;
             position = coord * size;
             bounds = new Bounds(position, Vector2.one * size);
             Vector3 positionV3 = new Vector3(position.x, 0, position.y);
@@ -112,10 +133,11 @@ public class EndlessTerrain : MonoBehaviour
             lodMeshes = new LODMesh[detailLevels.Length];
             for (int i = 0; i < detailLevels.Length; i++)
             {
-                lodMeshes[i] = new LODMesh(detailLevels[i].lod, UpdateTerrainChunk);
-                if (detailLevels[i].useForCollider)
+                lodMeshes[i] = new LODMesh(detailLevels[i].lod);
+                lodMeshes[i].updateCallback += UpdateTerrainChunk;
+                if (i == colliderLODIndex)
                 {
-                    collisionLODMesh = lodMeshes[i];
+                    lodMeshes[i].updateCallback += UpdateCollisionMesh;
                 }
             }
 
@@ -136,6 +158,8 @@ public class EndlessTerrain : MonoBehaviour
             if (mapDataReceived)
             {
                 var viewerDistanceFromNearestEdge = Mathf.Sqrt(bounds.SqrDistance(viewerPosition));
+
+                bool wasVisible = IsVisible();
                 bool visible = viewerDistanceFromNearestEdge <= maxViewDistance;
 
                 if (visible)
@@ -167,22 +191,53 @@ public class EndlessTerrain : MonoBehaviour
                             lodMesh.RequestMesh(mapData);
                         }
                     }
-                    if (lodIndex == 0)
-                    {
-                        if (collisionLODMesh.hasMesh)
-                        {
-                            meshCollider.sharedMesh = collisionLODMesh.mesh;
-                        }
-                        else if (!collisionLODMesh.hasRequestedMesh)
-                        {
-                            collisionLODMesh.RequestMesh(mapData);
-                        }
-                    }
-
-                    terrainChunksVisibleLastUpdate.Add(this);
                 }
 
-                SetVisible(visible);
+                if (wasVisible != visible)
+                {
+                    if (visible)
+                    {
+                        visibleTerrainChunks.Add(this);
+                    }
+                    else
+                    {
+                        visibleTerrainChunks.Remove(this);
+                    }
+                    SetVisible(visible);
+                }
+            }
+        }
+
+        public void UpdateCollisionMesh()
+        {
+            print($"UpdateCollisionMesh for {coord}");
+            if (!hasSetCollider)
+            {
+                float sqrDistanceFromViewerToEdge = bounds.SqrDistance(viewerPosition);
+                print($"--{coord} SQR distance to viewer {sqrDistanceFromViewerToEdge}. COllider threshold is {colliderGenerationDistanceThreshold * colliderGenerationDistanceThreshold}");
+
+                if (sqrDistanceFromViewerToEdge < detailLevels[colliderLODIndex].sqrVisibleDistanceThreshold)
+                {
+                    if (!lodMeshes[colliderLODIndex].hasRequestedMesh)
+                    {
+                        lodMeshes[colliderLODIndex].RequestMesh(mapData);
+                    }
+                }
+
+                if (sqrDistanceFromViewerToEdge < colliderGenerationDistanceThreshold * colliderGenerationDistanceThreshold)
+                {
+                    print($"--{coord} has a mesh?");
+                    if (lodMeshes[colliderLODIndex].hasMesh)
+                    {
+                        print($"--{coord} has a mesh!!!");
+                        meshCollider.sharedMesh = lodMeshes[colliderLODIndex].mesh;
+                        hasSetCollider = true;
+                    }
+                    else
+                    {
+                        print($"--{coord} NO MESH");
+                    }
+                }
             }
         }
 
@@ -203,12 +258,11 @@ public class EndlessTerrain : MonoBehaviour
         public bool hasRequestedMesh;
         public bool hasMesh;
         int lod;
-        System.Action updateCallback;
+        public event System.Action updateCallback;
 
-        public LODMesh(int levelOfDetail, System.Action _updateCallback)
+        public LODMesh(int levelOfDetail)
         {
             lod = levelOfDetail;
-            updateCallback = _updateCallback;
         }
 
         public void RequestMesh(MapData mapData)
@@ -229,8 +283,16 @@ public class EndlessTerrain : MonoBehaviour
     [System.Serializable]
     public struct LODInfo
     {
+        [Range(0,MeshGenerator.numberSupportedLOD-1)]
         public int lod;
         public float visibleDistanceThreshold;
-        public bool useForCollider;
+
+        public float sqrVisibleDistanceThreshold
+        {
+            get
+            {
+                return visibleDistanceThreshold * visibleDistanceThreshold;
+            }
+        }
     }
 }

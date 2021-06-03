@@ -17,9 +17,15 @@ public class MapGenerator : MonoBehaviour
     public NoiseData noiseData;
     public TextureData textureData;
 
+    [Range(0, MeshGenerator.numberSupportedChunkSizes-1)]
+    public int chunkSizeIndex;
+
+    [Range(0, MeshGenerator.numberSupportedFlatShadedChunkSizes - 1)]
+    public int flatShadedChunkSizeIndex;
+
     public DrawMode drawMode;
 
-    [Range(0, 6)]
+    [Range(0, MeshGenerator.numberSupportedLOD-1)]
     public int levelOfDetailInEditor;
 
     public bool autoUpdate;
@@ -34,12 +40,19 @@ public class MapGenerator : MonoBehaviour
     {
         get
         {
-            return terrainData.useFlatShading ? 95 : 239;
+            return (terrainData.useFlatShading ? MeshGenerator.supportedFlatShadedChunkSizes[flatShadedChunkSizeIndex] : MeshGenerator.supportedChunkSizes[chunkSizeIndex]) - 1;
         }
+    }
+
+    private void Awake()
+    {
+        textureData.ApplyToMaterial(terrainMaterial);
+        textureData.UpdateMeshHeights(terrainMaterial, terrainData.minHeight, terrainData.maxHeight);
     }
 
     public void DrawMapInEditor()
     {
+        textureData.UpdateMeshHeights(terrainMaterial, terrainData.minHeight, terrainData.maxHeight);
         var mapData = GenerateMapData(Vector2.zero);
 
         MapDisplay mapDisplay = FindObjectOfType<MapDisplay>();
@@ -139,8 +152,6 @@ public class MapGenerator : MonoBehaviour
                 }
             }
         }
-
-        textureData.UpdateMeshHeights(terrainMaterial, terrainData.minHeight, terrainData.maxHeight);
 
         return new MapData(noiseMap);
     }
