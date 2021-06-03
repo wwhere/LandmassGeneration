@@ -17,7 +17,8 @@ public class MapGenerator : MonoBehaviour
     public DrawMode drawMode;
     public Noise.NormaliseMode normaliseMode;
 
-    public const int mapChunkSize = 239;
+    public bool useFlatShading;
+
     [Range(0, 6)]
     public int levelOfDetailInEditor;
 
@@ -45,6 +46,14 @@ public class MapGenerator : MonoBehaviour
     Queue<MapThreadInfo<MapData>> mapDataThreadInfoQueue = new Queue<MapThreadInfo<MapData>>();
     Queue<MapThreadInfo<MeshData>> meshDataThreadInfoQueue = new Queue<MapThreadInfo<MeshData>>();
 
+    public int mapChunkSize
+    {
+        get
+        {
+            return useFlatShading ? 95 : 239;
+        }
+    }
+
     private void Awake()
     {
         falloffMap = FalloffGenerator.GenerateFalloffMap(mapChunkSize);
@@ -66,7 +75,7 @@ public class MapGenerator : MonoBehaviour
         }
         else if (drawMode == DrawMode.Mesh)
         {
-            mapDisplay.DrawMesh(MeshGenerator.GenerateTerrainMesh(mapData.heightMap, meshHeightMultiplier, meshHeightCurve, levelOfDetailInEditor), TextureGenerator.TextureFromColourMap(mapData.colourMap, mapChunkSize, mapChunkSize));
+            mapDisplay.DrawMesh(MeshGenerator.GenerateTerrainMesh(mapData.heightMap, meshHeightMultiplier, meshHeightCurve, levelOfDetailInEditor, useFlatShading), TextureGenerator.TextureFromColourMap(mapData.colourMap, mapChunkSize, mapChunkSize));
         }
         else if (drawMode == DrawMode.FalloffMap)
         {
@@ -105,7 +114,7 @@ public class MapGenerator : MonoBehaviour
 
     void MeshDataThread(MapData mapData, int lod, Action<MeshData> callback)
     {
-        MeshData meshData = MeshGenerator.GenerateTerrainMesh(mapData.heightMap, meshHeightMultiplier, meshHeightCurve, lod);
+        MeshData meshData = MeshGenerator.GenerateTerrainMesh(mapData.heightMap, meshHeightMultiplier, meshHeightCurve, lod, useFlatShading);
         lock (meshDataThreadInfoQueue)
         {
             meshDataThreadInfoQueue.Enqueue(new MapThreadInfo<MeshData>(callback, meshData));
@@ -169,6 +178,8 @@ public class MapGenerator : MonoBehaviour
             lacunarity = 1;
         if (octaves < 0)
             octaves = 0;
+        if (useFlatShading && levelOfDetailInEditor == 5)
+            levelOfDetailInEditor = 4;
         falloffMap = FalloffGenerator.GenerateFalloffMap(mapChunkSize);
     }
 
