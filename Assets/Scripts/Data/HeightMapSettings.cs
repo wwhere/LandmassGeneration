@@ -11,6 +11,8 @@ public class HeightMapSettings : UpdatableData
     public AnimationCurve heightCurve;
     public bool useFalloff;
 
+    
+
     public float minHeight
     {
         get
